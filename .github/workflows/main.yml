@@ -1,0 +1,31 @@
+name: Build Android APK
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. 下载代码
+        uses: actions/checkout@v3
+
+      - name: 2. 配置 Python 环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 3. 安装 Flutter 环境
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: 4. 安装 Flet
+        run: pip install flet
+
+      - name: 5. 开始编译安卓 APK！(包含名字和图标)
+        run: flet build apk --product "吐温自省" --org com.twain.app
+
+      - name: 6. 提取打包好的安装包
+        uses: actions/upload-artifact@v3
+        with:
+          name: Twain-App-APK
+          path: build/apk/**/*.apk
