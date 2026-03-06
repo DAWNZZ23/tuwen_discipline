@@ -1,6 +1,7 @@
 import flet as ft
 import sqlite3
 from datetime import date
+import calendar
 
 
 # ================= 1. 数据库模块 =================
@@ -54,6 +55,7 @@ def main(page: ft.Page):
 
     # ================= [页面 1] 打卡界面的所有控件 =================
     checkin_title = ft.Text("吐温自省 - 今日打卡", size=28, weight="bold")
+    date_input = ft.TextField(label="打卡日期 (修改此处可进行历史补签)", value=str(date.today()), width=300)
 
     def create_time_counter(label_text, step=0.5):
         txt_number = ft.TextField(value="0", text_align="center", width=80, keyboard_type="number")
@@ -71,9 +73,9 @@ def main(page: ft.Page):
 
         row = ft.Row([
             ft.Text(label_text, width=120, weight="bold"),
-            ft.FilledTonalButton(content=" - ", on_click=minus_click),
+            ft.FilledTonalButton(content=ft.Text(" - "), on_click=minus_click),
             txt_number,
-            ft.FilledTonalButton(content=" + ", on_click=plus_click)
+            ft.FilledTonalButton(content=ft.Text(" + "), on_click=plus_click)
         ], alignment=ft.MainAxisAlignment.START)
         return row, txt_number
 
@@ -96,8 +98,7 @@ def main(page: ft.Page):
 
     def submit_data(e):
         try:
-            # 自动获取今天的真实日期
-            record_date = str(date.today())
+            record_date = date_input.value.strip()
 
             study = float(study_input.value)
             research = float(research_input.value)
@@ -139,9 +140,11 @@ def main(page: ft.Page):
                                  int(expense_reasonable), porn, score))
             db_conn.commit()
 
-            msg = f"打卡成功！今日花销 {expense_amt}元 ({'达标+10' if expense_reasonable else '超标-10'})"
+            msg = f"{record_date} 打卡成功！今日花销 {expense_amt}元 ({'达标+10' if expense_reasonable else '超标-10'})"
             result_text.value = f"{msg}\n单日得分：{score} 分"
             result_text.color = "blue"
+
+            update_calendar()
             page.update()
 
         except ValueError:
@@ -149,7 +152,7 @@ def main(page: ft.Page):
             result_text.color = "red"
             page.update()
 
-    submit_btn = ft.FilledButton(content="提交打卡数据", on_click=submit_data, width=300)
+    submit_btn = ft.FilledButton(content=ft.Text("提交打卡数据"), on_click=submit_data, width=300)
 
     # ================= [页面 2] 核心：动态读取数据库生成统计与奖励 =================
     def load_stats_ui():
@@ -231,7 +234,6 @@ def main(page: ft.Page):
                 ft.Text("📅 历史打卡明细:", weight="bold", size=18)
             ]
 
-            # 使用 sorted 进行正序排列
             for row in sorted(rows, key=lambda x: x[0]):
                 date_str = row[0] if len(row) > 0 else "未知日期"
                 score = safe_get(row, 11)
@@ -246,10 +248,115 @@ def main(page: ft.Page):
                 ft.Text(f"错误信息: {str(e)}", color="red")
             ]
 
-    # ================= 3. 终极防白屏页面架构 (使用可见性切换) =================
+    # ================= [页面 3] 🌟 史诗级新功能：历史日历 =================
+
+    cal_year_dd = ft.Dropdown(
+        options=[ft.dropdown.Option(str(y)) for y in range(2025, 2031)],
+        value=str(date.today().year), width=100, height=50
+    )
+    cal_month_dd = ft.Dropdown(
+        options=[ft.dropdown.Option(str(m)) for m in range(1, 13)],
+        value=str(date.today().month), width=80, height=50
+    )
+
+    cal_board_container = ft.Container(alignment=ft.Alignment.CENTER)
+    cal_details_container = ft.Container(alignment=ft.Alignment.CENTER)
+
+    def show_day_details(d_str):
+        cursor = db_conn.cursor()
+        cursor.execute("SELECT * FROM records WHERE date=?", (d_str,))
+        row = cursor.fetchone()
+
+        if row:
+            new_content = ft.Container(
+                content=ft.Column([
+                    ft.Text(f"📅 {d_str} 打卡档案", size=22, weight="bold", color="white"),
+                    ft.Divider(color="white"),
+                    ft.Text(f"🏆 总得分: {row[11]} 分", size=18, weight="bold", color="#ffed4a"),
+                    ft.Text(f"📚 学习: {row[1]}h | 🔬 科研: {row[2]}h", color="white"),
+                    ft.Text(f"🏋️ 健身: {'是' if row[3] else '否'} | 🏀 打球: {'是' if row[4] else '否'}", color="white"),
+                    ft.Text(f"📞 父母电话: {row[5]} 次", color="white"),
+                    ft.Text(f"💤 早睡: {'是' if row[6] else '否'} | 🥗 饮食健康: {'是' if row[7] else '否'}",
+                            color="white"),
+                    ft.Text(f"💰 花销: {row[8]}元 ({'合理' if row[9] else '超标'})", color="white"),
+                    ft.Text(f"🚫 未碰黄色: {'是' if row[10] else '否'}", color="white"),
+                ]),
+                padding=20,
+                bgcolor="#3b82f6",
+                border_radius=15,
+                width=400
+            )
+        else:
+            new_content = ft.Text(f"📅 {d_str} 这天你可能在摸鱼，没有记录哦！", color="grey", size=16)
+
+        cal_details_container.content = new_content
+        try:
+            cal_details_container.update()
+        except:
+            page.update()
+
+    def update_calendar(e=None):
+        y = int(cal_year_dd.value)
+        m = int(cal_month_dd.value)
+
+        cursor = db_conn.cursor()
+        cursor.execute("SELECT date FROM records WHERE date LIKE ?", (f"{y}-{m:02d}-%",))
+        db_dates = [row[0] for row in cursor.fetchall()]
+
+        main_col = ft.Column(spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+
+        weekdays = ["一", "二", "三", "四", "五", "六", "日"]
+        header_row = ft.Row(spacing=5, alignment=ft.MainAxisAlignment.CENTER)
+        for wd in weekdays:
+            header_row.controls.append(
+                ft.Container(content=ft.Text(wd, weight="bold", color="grey"), width=45, height=40,
+                             alignment=ft.Alignment.CENTER)
+            )
+        main_col.controls.append(header_row)
+
+        matrix = calendar.monthcalendar(y, m)
+        for week in matrix:
+            week_row = ft.Row(spacing=5, alignment=ft.MainAxisAlignment.CENTER)
+            for day in week:
+                if day == 0:
+                    week_row.controls.append(ft.Container(width=45, height=45))
+                else:
+                    date_str = f"{y}-{m:02d}-{day:02d}"
+                    has_record = date_str in db_dates
+                    bg_color = "#10b981" if has_record else "#f3f4f6"
+                    text_color = "white" if has_record else "black"
+
+                    btn = ft.Container(
+                        content=ft.Text(str(day), color=text_color, weight="bold"),
+                        width=45, height=45,
+                        bgcolor=bg_color,
+                        border_radius=8,
+                        alignment=ft.Alignment.CENTER,
+                        ink=True,
+                        on_click=lambda e, d=date_str: show_day_details(d)
+                    )
+                    week_row.controls.append(btn)
+            main_col.controls.append(week_row)
+
+        cal_board_container.content = main_col
+        if e is not None:
+            cal_details_container.content = ft.Container()
+
+        try:
+            cal_board_container.update()
+            cal_details_container.update()
+        except:
+            page.update()
+
+    # 依然保留自动刷新的尝试（万一未来 Flet 修复了这个 Bug，它就能自动工作）
+    cal_year_dd.on_change = update_calendar
+    cal_month_dd.on_change = update_calendar
+
+    # ================= 4. 终极页面架构 (使用可见性切换) =================
     checkin_container = ft.Column(
         controls=[
             checkin_title,
+            date_input,
             ft.Divider(),
             study_row, research_row, ft.Divider(),
             ft.Row([fitness_check, basketball_check]),
@@ -257,40 +364,62 @@ def main(page: ft.Page):
             sleep_check, diet_check, porn_check, ft.Divider(),
             submit_btn, result_text
         ],
-        scroll="adaptive",
-        expand=True,
-        visible=True
+        scroll="adaptive", expand=True, visible=True
     )
 
     stats_container = ft.Column(
-        controls=[],
-        scroll="adaptive",
-        expand=True,
-        visible=False
+        controls=[], scroll="adaptive", expand=True, visible=False
+    )
+
+    calendar_container = ft.Column(
+        controls=[
+            ft.Text("岁月史书", size=28, weight="bold"),
+            # 🌟 绝杀外挂在此！加了一个非常醒目的蓝色刷新按钮！
+            ft.Row([
+                cal_year_dd, ft.Text("年", size=18, weight="bold"),
+                cal_month_dd, ft.Text("月", size=18, weight="bold"),
+                ft.FilledTonalButton(content="🔄 刷新", on_click=update_calendar)  # 🌟 换成绝对不报错的标准按钮！
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Divider(),
+            cal_board_container,
+            ft.Divider(),
+            cal_details_container
+        ],
+        scroll="adaptive", expand=True, visible=False
     )
 
     def switch_tab(e, index):
+        checkin_container.visible = False
+        stats_container.visible = False
+        calendar_container.visible = False
+
         if index == 0:
             checkin_container.visible = True
-            stats_container.visible = False
-        else:
+        elif index == 1:
             stats_container.controls = load_stats_ui()
-            checkin_container.visible = False
             stats_container.visible = True
+        elif index == 2:
+            update_calendar()
+            calendar_container.visible = True
         page.update()
 
     main_content = ft.Column(
-        controls=[checkin_container, stats_container],
+        controls=[checkin_container, stats_container, calendar_container],
         expand=True
     )
 
     bottom_bar = ft.Container(
         content=ft.Row(
             controls=[
-                ft.FilledTonalButton("📝 今日打卡", on_click=lambda e: switch_tab(e, 0), expand=True, height=50),
-                ft.FilledTonalButton("📊 数据统计", on_click=lambda e: switch_tab(e, 1), expand=True, height=50),
+                ft.FilledTonalButton(content=ft.Text("📝 打卡"), on_click=lambda e: switch_tab(e, 0), expand=True,
+                                     height=50),
+                ft.FilledTonalButton(content=ft.Text("📊 统计"), on_click=lambda e: switch_tab(e, 1), expand=True,
+                                     height=50),
+                ft.FilledTonalButton(content=ft.Text("📅 日历"), on_click=lambda e: switch_tab(e, 2), expand=True,
+                                     height=50),
             ],
-            alignment=ft.MainAxisAlignment.SPACE_EVENLY
+            alignment=ft.MainAxisAlignment.SPACE_EVENLY,
+            spacing=10
         ),
         padding=10,
         bgcolor="#f3f4f6",
@@ -298,6 +427,7 @@ def main(page: ft.Page):
     )
 
     page.add(main_content, bottom_bar)
+    update_calendar()
 
 
-ft.app(target=main)
+ft.run(main)
