@@ -105,7 +105,7 @@ def create_calendar_view(page: ft.Page):
 
     calendar_container = ft.Column(
         controls=[
-            ft.Text("岁月史书", size=24, weight="bold"),
+            ft.Text("📆岁月史书", size=24, weight="bold"),
             ft.Row([
                 cal_year_dd, ft.Text("年", size=16, weight="bold"),
                 cal_month_dd, ft.Text("月", size=16, weight="bold"),
