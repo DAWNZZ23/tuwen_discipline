@@ -35,7 +35,7 @@ def create_checkin_view(page: ft.Page, on_submit_success):
     research_row, research_input = create_time_counter("科研时间 (h):", step=0.5)
 
     call_parents_dropdown = ft.Dropdown(
-        label="给父母&🌽打电话", value="0", width=160,
+        label="打电话", value="0", width=160,
         options=[ft.dropdown.Option(str(i)) for i in range(4)]
     )
 
